@@ -11,6 +11,12 @@
   </head>
   <body class="min-h-screen bg-neutral-900">
     <div id="root"></div>
-    <script type="text/babel" data-presets="typescript,react" src="./app.js"></script>
+    <script type="text/babel" data-presets="typescript,react" src="./app.tsx"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(MCToolkit));
+      });
+    </script>
   </body>
 </html>
