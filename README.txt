@@ -1,0 +1,1 @@
+Double-click index.html to run. No build step required. React + Tailwind via CDN.
