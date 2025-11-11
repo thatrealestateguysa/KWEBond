@@ -395,6 +395,24 @@
             </div>
             <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
               <div className="grid gap-3 text-lg">
+                {(() => {
+                  const dtiBudget = income * targetDTI;
+                  const gap = dtiBudget - expenses;
+                  const needs = income > 0 ? Math.ceil((expenses / income) * 1000) / 10 : 0;
+                  return gap <= 0 ? (
+                    <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-sm text-red-200">
+                      Your expenses ({fmtZAR(expenses)}) exceed your DTI budget ({fmtZAR(dtiBudget)}).
+                      Increase DTI to at least <b>{needs}%</b> or reduce expenses to see a positive installment budget.
+                      <div className="mt-2">
+                        <button className="px-3 py-2 rounded-lg border border-red-400/50 hover:bg-red-500/10"
+                                onClick={() => setTargetDTI(needs/100)}>
+                          Set DTI to {needs}%
+                        </button>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
                 <div className="grid grid-cols-2 text-sm">
                   <div className="text-neutral-300">Installment budget (monthly)</div><div className="text-right font-medium">{fmtZAR(monthlyCapacity)}</div>
                 </div>
