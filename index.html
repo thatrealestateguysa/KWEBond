@@ -1,38 +1,33 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KW Explore Bond</title>
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KW Explore Bond — Explore Property Group Bond Calculator</title>
+  <meta name="theme-color" content="#E31837" />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @media print{
-      nav, header button { display:none; }
-      main { padding-top: 0; }
-      .no-print { display:none; }
-    }
-    .no-scrollbar::-webkit-scrollbar{ display:none; }
-    .no-scrollbar{ -ms-overflow-style:none; scrollbar-width:none; }
+    @media print {.no-print { display:none !important; } header { position: static !important; }}
+    html, body { background: #111827; }
   </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="min-h-screen bg-neutral-900 text-white">
-  <div id="root"></div>
-  <script type="text/babel" data-presets="react">
-    const {useState, useMemo, useEffect} = React;
+<body class="min-h-screen text-white">
+  <div id="app"></div>
 
-    const fmtZAR = n => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0);
-
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+    const KW_RED = "#E31837";
+    const fmtZAR = (n) => new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0);
     function monthlyPayment({principal, annualRatePct, years, paymentsPerYear = 12}){
       const r = (annualRatePct/100) / paymentsPerYear;
       const n = years * paymentsPerYear;
-      if (n <= 0) return 0;            // guard for empty/zero term
+      if (n <= 0) return 0;
       if (r === 0) return principal / n;
       return principal * r * Math.pow(1+r, n) / (Math.pow(1+r, n) - 1);
     }
-
     function buildAmortization({principal, annualRatePct, years}){
       const r = (annualRatePct/100) / 12;
       const n = years * 12;
@@ -48,7 +43,56 @@
       }
       return rows;
     }
-
+    function buildAmortizationWithExtra({principal, annualRatePct, years, extraMonthly = 0, onceOffMonth = 0, onceOffAmount = 0}){
+      const r = (annualRatePct/100)/12;
+      const basePmt = monthlyPayment({principal, annualRatePct, years});
+      const rows = [];
+      let bal = principal; let m = 0;
+      const safety = years*12 + 600;
+      while(bal > 0 && m < safety){
+        m++;
+        const opening = bal;
+        const interest = opening * r;
+        let pay = basePmt + (extraMonthly||0);
+        if(onceOffAmount>0 && m===onceOffMonth) pay += onceOffAmount;
+        const principalPay = Math.min(pay - interest, opening);
+        bal = Math.max(0, opening - principalPay);
+        rows.push({month:m, payment:pay, interest, principal:principalPay, balance:bal});
+      }
+      return {rows, basePmt};
+    }
+    function exportAmortWithFormulasCSV(filename, principal, annualRatePct, years, extraMonthly){
+      const r = (annualRatePct/100)/12;
+      const base = monthlyPayment({principal, annualRatePct, years});
+      const pay  = base + (extraMonthly||0);
+      const maxRows = Math.min(600, years*12 + 360);
+      const lines = [];
+      lines.push(["Month","Opening","Interest","Payment","Extra","Principal","Closing"].join(","));
+      lines.push([1, principal, `=B2*${r}`, `=IF(B2<=0,0,${pay})`, extraMonthly, `=IF(B2<=0,0,MIN(D2-C2,B2))`, `=IF(B2<=0,0,MAX(0,B2-G2))`].join(","));
+      for(let i=3;i<2+maxRows;i++){
+        const prev = i-1;
+        lines.push([i-1, `=H${prev}`, `=B${i}*${r}`, `=IF(B${i}<=0,0,${pay})`, extraMonthly, `=IF(B${i}<=0,0,MIN(D${i}-C${i},B${i}))`, `=IF(B${i}<=0,0,MAX(0,B${i}-G${i}))`].join(","));
+      }
+      const blob = new Blob([lines.join("\n")], { type:"text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+    }
+    const DEEDS_TRANSFER = [
+      { upTo: 100000, fee: 50 },{ upTo: 200000, fee: 114 },{ upTo: 300000, fee: 727 },
+      { upTo: 600000, fee: 906 },{ upTo: 800000, fee: 1275 },{ upTo: 1000000, fee: 1464 },
+      { upTo: 2000000, fee: 1646 },{ upTo: 4000000, fee: 2281 },{ upTo: 6000000, fee: 2767 },
+      { upTo: 8000000, fee: 3296 },{ upTo: 10000000, fee: 3853 },{ upTo: 15000000, fee: 4587 },
+      { upTo: 20000000, fee: 5510 },{ upTo: Infinity, fee: 7340 },
+    ];
+    const DEEDS_BOND = [
+      { upTo: 150000, fee: 561 },{ upTo: 300000, fee: 727 },{ upTo: 600000, fee: 906 },
+      { upTo: 800000, fee: 1275 },{ upTo: 1000000, fee: 1464 },{ upTo: 2000000, fee: 1646 },
+      { upTo: 4000000, fee: 2281 },{ upTo: 6000000, fee: 2767 },{ upTo: 8000000, fee: 3296 },
+      { upTo: 10000000, fee: 3853 },{ upTo: 15000000, fee: 4587 },{ upTo: 20000000, fee: 5510 },
+      { upTo: 30000000, fee: 6422 },{ upTo: Infinity, fee: 9176 },
+    ];
+    function deedsTransferFee(price){ return (DEEDS_TRANSFER.find(b => price <= b.upTo) || DEEDS_TRANSFER[DEEDS_TRANSFER.length-1]).fee; }
+    function deedsBondFee(bond){ return (DEEDS_BOND.find(b => bond <= b.upTo) || DEEDS_BOND[DEEDS_BOND.length-1]).fee; }
     const TD_2025APR = [
       { upTo: 1210000, base: 0, rateAbove: 0, threshold: 0 },
       { upTo: 1663800, base: 0, rateAbove: 0.03, threshold: 1210000 },
@@ -67,7 +111,7 @@
     ];
     function transferDuty(amount, acquisitionDateISO){
       const d = new Date(acquisitionDateISO);
-      const useApr2025 = !isNaN(d.valueOf()) && d >= new Date('2025-04-01T00:00:00');
+      const useApr2025 = !isNaN(d.valueOf()) && d >= new Date("2025-04-01T00:00:00");
       const table = useApr2025 ? TD_2025APR : TD_2024MAR;
       for(const band of table){
         if(amount <= band.upTo){
@@ -77,463 +121,348 @@
       }
       return 0;
     }
-
-    const DEEDS_TRANSFER = [
-      { upTo: 100000, fee: 50 },
-      { upTo: 200000, fee: 114 },
-      { upTo: 300000, fee: 727 },
-      { upTo: 600000, fee: 906 },
-      { upTo: 800000, fee: 1275 },
-      { upTo: 1000000, fee: 1464 },
-      { upTo: 2000000, fee: 1646 },
-      { upTo: 4000000, fee: 2281 },
-      { upTo: 6000000, fee: 2767 },
-      { upTo: 8000000, fee: 3296 },
-      { upTo: 10000000, fee: 3853 },
-      { upTo: 15000000, fee: 4587 },
-      { upTo: 20000000, fee: 5510 },
-      { upTo: Infinity, fee: 7340 },
-    ];
-    const DEEDS_BOND = [
-      { upTo: 150000, fee: 561 },
-      { upTo: 300000, fee: 727 },
-      { upTo: 600000, fee: 906 },
-      { upTo: 800000, fee: 1275 },
-      { upTo: 1000000, fee: 1464 },
-      { upTo: 2000000, fee: 1646 },
-      { upTo: 4000000, fee: 2281 },
-      { upTo: 6000000, fee: 2767 },
-      { upTo: 8000000, fee: 3296 },
-      { upTo: 10000000, fee: 3853 },
-      { upTo: 15000000, fee: 4587 },
-      { upTo: 20000000, fee: 5510 },
-      { upTo: 30000000, fee: 6422 },
-      { upTo: Infinity, fee: 9176 },
-    ];
-    const deedsTransferFee = price => {
-      for (let i=0;i<DEEDS_TRANSFER.length;i++){ if(price <= DEEDS_TRANSFER[i].upTo) return DEEDS_TRANSFER[i].fee; }
-      return DEEDS_TRANSFER[DEEDS_TRANSFER.length-1].fee;
-    };
-    const deedsBondFee = bond => {
-      for (let i=0;i<DEEDS_BOND.length;i++){ if(bond <= DEEDS_BOND[i].upTo) return DEEDS_BOND[i].fee; }
-      return DEEDS_BOND[DEEDS_BOND.length-1].fee;
-    };
-
     const TRANSFER_GUIDELINE_AUG2025 = [
-      {value:100000,total:11119},{value:200000,total:13865},{value:250000,total:15819},{value:300000,total:17160},
-      {value:350000,total:18680},{value:400000,total:20021},{value:450000,total:21362},{value:500000,total:22703},
-      {value:550000,total:25296},{value:600000,total:25296},{value:650000,total:28258},{value:700000,total:28258},
-      {value:750000,total:30851},{value:800000,total:30851},{value:850000,total:33634},{value:900000,total:33634},
-      {value:950000,total:36227},{value:1000000,total:36227},{value:1100000,total:39002},{value:1200000,total:39002},
-      {value:1300000,total:44295},{value:1400000,total:47295},{value:1500000,total:52889},{value:1600000,total:55889},
-      {value:1700000,total:62568},{value:1800000,total:68568},{value:1900000,total:77161},{value:2000000,total:83161},
-      {value:2100000,total:92389},{value:2200000,total:98389},{value:2300000,total:106983},{value:2400000,total:114397},
-      {value:2500000,total:124990},{value:2600000,total:132990},{value:2700000,total:143583},{value:2800000,total:151583},
-      {value:2900000,total:162176},{value:3000000,total:170332},{value:3500000,total:233112},{value:4000000,total:293299},
-      {value:4500000,total:356564},{value:5000000,total:416751},{value:6000000,total:522278},{value:7000000,total:650335},
-      {value:8000000,total:766862},{value:9000000,total:883946},{value:10000000,total:1000474},
+      { value: 100000, total: 11119 },{ value: 200000, total: 13865 },{ value: 250000, total: 15819 },
+      { value: 300000, total: 17160 },{ value: 350000, total: 18680 },{ value: 400000, total: 20021 },
+      { value: 450000, total: 21362 },{ value: 500000, total: 22703 },{ value: 550000, total: 25296 },
+      { value: 600000, total: 25296 },{ value: 650000, total: 28258 },{ value: 700000, total: 28258 },
+      { value: 750000, total: 30851 },{ value: 800000, total: 30851 },{ value: 850000, total: 33634 },
+      { value: 900000, total: 33634 },{ value: 950000, total: 36227 },{ value: 1000000, total: 36227 },
+      { value: 1100000, total: 39002 },{ value: 1200000, total: 39002 },{ value: 1300000, total: 44295 },
+      { value: 1400000, total: 47295 },{ value: 1500000, total: 52889 },{ value: 1600000, total: 55889 },
+      { value: 1700000, total: 62568 },{ value: 1800000, total: 68568 },{ value: 1900000, total: 77161 },
+      { value: 2000000, total: 83161 },{ value: 2100000, total: 92389 },{ value: 2200000, total: 98389 },
+      { value: 2300000, total: 106983 },{ value: 2400000, total: 114397 },{ value: 2500000, total: 124990 },
+      { value: 2600000, total: 132990 },{ value: 2700000, total: 143583 },{ value: 2800000, total: 151583 },
+      { value: 2900000, total: 162176 },{ value: 3000000, total: 170332 },{ value: 3500000, total: 233112 },
+      { value: 4000000, total: 293299 },{ value: 4500000, total: 356564 },{ value: 5000000, total: 416751 },
+      { value: 6000000, total: 522278 },{ value: 7000000, total: 650335 },{ value: 8000000, total: 766862 },
+      { value: 9000000, total: 883946 },{ value: 10000000, total: 1000474 },
     ];
     const BOND_GUIDELINE_AUG2025 = [
-      {bond:250000,total:15819},{bond:300000,total:17160},{bond:350000,total:18680},{bond:400000,total:20021},
-      {bond:450000,total:21362},{bond:500000,total:22703},{bond:550000,total:25296},{bond:600000,total:25296},
-      {bond:650000,total:28258},{bond:700000,total:28258},{bond:750000,total:30851},{bond:800000,total:30851},
-      {bond:850000,total:33634},{bond:900000,total:33634},{bond:950000,total:36227},{bond:1000000,total:36227},
-      {bond:1100000,total:39002},{bond:1200000,total:39002},{bond:1300000,total:41595},{bond:1400000,total:41595},
-      {bond:1500000,total:44189},{bond:1600000,total:44189},{bond:1700000,total:46782},{bond:1800000,total:46782},
-      {bond:1900000,total:49375},{bond:2000000,total:49375},{bond:2100000,total:52603},{bond:2200000,total:52603},
-      {bond:2300000,total:55197},{bond:2400000,total:55197},{bond:2500000,total:57790},{bond:2600000,total:57790},
-      {bond:2700000,total:60383},{bond:2800000,total:60383},{bond:2900000,total:62976},{bond:3000000,total:62976},
-      {bond:3500000,total:70756},{bond:4000000,total:75943},{bond:4500000,total:84208},{bond:5000000,total:89395},
-      {bond:6000000,total:95922},{bond:7000000,total:102979},{bond:8000000,total:109506},{bond:9000000,total:116590},
-      {bond:10000000,total:123118},
+      { bond: 250000, total: 15819 },{ bond: 300000, total: 17160 },{ bond: 350000, total: 18680 },
+      { bond: 400000, total: 20021 },{ bond: 450000, total: 21362 },{ bond: 500000, total: 22703 },
+      { bond: 550000, total: 25296 },{ bond: 600000, total: 25296 },{ bond: 650000, total: 28258 },
+      { bond: 700000, total: 28258 },{ bond: 750000, total: 30851 },{ bond: 800000, total: 30851 },
+      { bond: 850000, total: 33634 },{ bond: 900000, total: 33634 },{ bond: 950000, total: 36227 },
+      { bond: 1000000, total: 36227 },{ bond: 1100000, total: 39002 },{ bond: 1200000, total: 39002 },
+      { bond: 1300000, total: 41595 },{ bond: 1400000, total: 41595 },{ bond: 1500000, total: 44189 },
+      { bond: 1600000, total: 44189 },{ bond: 1700000, total: 46782 },{ bond: 1800000, total: 46782 },
+      { bond: 1900000, total: 49375 },{ bond: 2000000, total: 49375 },{ bond: 2100000, total: 52603 },
+      { bond: 2200000, total: 52603 },{ bond: 2300000, total: 55197 },{ bond: 2400000, total: 55197 },
+      { bond: 2500000, total: 57790 },{ bond: 2600000, total: 57790 },{ bond: 2700000, total: 60383 },
+      { bond: 2800000, total: 60383 },{ bond: 2900000, total: 62976 },{ bond: 3000000, total: 62976 },
+      { bond: 3500000, total: 70756 },{ bond: 4000000, total: 75943 },{ bond: 4500000, total: 84208 },
+      { bond: 5000000, total: 89395 },{ bond: 6000000, total: 95922 },{ bond: 7000000, total: 102979 },
+      { bond: 8000000, total: 109506 },{ bond: 9000000, total: 116590 },{ bond: 10000000, total: 123118 },
     ];
     const EARNINGS_GUIDELINE_AUG2025 = [
-      {installment:5076,income:18000},{installment:5584,income:19000},{installment:6091,income:22000},
-      {installment:6599,income:24000},{installment:7107,income:26000},{installment:7614,income:27000},
-      {installment:8122,income:29000},{installment:8629,income:30000},{installment:9137,income:35000},
-      {installment:9645,income:35500},{installment:10152,income:36000},{installment:11168,income:40000},
-      {installment:12183,income:45000},{installment:13198,income:50000},{installment:14213,income:53000},
-      {installment:15228,income:54000},{installment:16244,income:60000},{installment:17259,income:65000},
-      {installment:18274,income:70000},{installment:19289,income:73000},{installment:20305,income:75000},
-      {installment:21320,income:77000},{installment:22335,income:87000},{installment:23350,income:85000},
-      {installment:24365,income:90000},{installment:25381,income:95000},{installment:26396,income:98000},
-      {installment:27411,income:100000},{installment:28426,income:103000},{installment:29442,income:105000},
-      {installment:30457,income:110000},{installment:35533,income:130000},{installment:40609,income:145000},
-      {installment:45685,income:165000},{installment:50761,income:180000},{installment:60914,income:215000},
-      {installment:71066,income:255000},{installment:81218,income:290000},{installment:91371,income:325000},
-      {installment:101523,income:365000},
+      { installment: 5076, income: 18000 },{ installment: 5584, income: 19000 },{ installment: 6091, income: 22000 },
+      { installment: 6599, income: 24000 },{ installment: 7107, income: 26000 },{ installment: 7614, income: 27000 },
+      { installment: 8122, income: 29000 },{ installment: 8629, income: 30000 },{ installment: 9137, income: 35000 },
+      { installment: 9645, income: 35500 },{ installment: 10152, income: 36000 },{ installment: 11168, income: 40000 },
+      { installment: 12183, income: 45000 },{ installment: 13198, income: 50000 },{ installment: 14213, income: 53000 },
+      { installment: 15228, income: 54000 },{ installment: 16244, income: 60000 },{ installment: 17259, income: 65000 },
+      { installment: 18274, income: 70000 },{ installment: 19289, income: 73000 },{ installment: 20305, income: 75000 },
+      { installment: 21320, income: 77000 },{ installment: 22335, income: 87000 },{ installment: 23350, income: 85000 },
+      { installment: 24365, income: 90000 },{ installment: 25381, income: 95000 },{ installment: 26396, income: 98000 },
+      { installment: 27411, income: 100000 },{ installment: 28426, income: 103000 },{ installment: 29442, income: 105000 },
+      { installment: 30457, income: 110000 },{ installment: 35533, income: 130000 },{ installment: 40609, income: 145000 },
+      { installment: 45685, income: 165000 },{ installment: 50761, income: 180000 },{ installment: 60914, income: 215000 },
+      { installment: 71066, income: 255000 },{ installment: 81218, income: 290000 },{ installment: 91371, income: 325000 },
+      { installment: 101523, income: 365000 },
     ];
-    const getTransferGuidelineTotal = price => {
-      let out = TRANSFER_GUIDELINE_AUG2025[0].total;
-      for(const r of TRANSFER_GUIDELINE_AUG2025){ if(price >= r.value) out = r.total; else break; }
-      return out;
-    };
-    const getBondGuidelineTotal = bond => {
-      let out = BOND_GUIDELINE_AUG2025[0].total;
-      for(const r of BOND_GUIDELINE_AUG2025){ if(bond >= r.bond) out = r.total; else break; }
-      return out;
-    };
-    const getRecommendedIncomeFromPmt = installment => {
-      const rows = EARNINGS_GUIDELINE_AUG2025;
-      if(installment <= rows[0].installment) return rows[0].income;
-      for(let i=1;i<rows.length;i++){
-        const a = rows[i-1], b = rows[i];
-        if(installment <= b.installment){
-          const t = (installment - a.installment) / (b.installment - a.installment);
-          return Math.round(a.income + t*(b.income - a.income));
-        }
-      }
-      return rows[rows.length-1].income;
-    };
-
+    function getTransferGuidelineTotal(price){ if(!price) return 0; let chosen = TRANSFER_GUIDELINE_AUG2025[0]; for(const r of TRANSFER_GUIDELINE_AUG2025){ if(price >= r.value) chosen = r; else break; } return chosen.total; }
+    function getBondGuidelineTotal(bond){ if(!bond) return 0; let chosen = BOND_GUIDELINE_AUG2025[0]; for(const r of BOND_GUIDELINE_AUG2025){ if(bond >= r.bond) chosen = r; else break; } return chosen.total; }
+    function getRecommendedIncomeFromPmt(installment){ const rows = EARNINGS_GUIDELINE_AUG2025; if(installment <= rows[0].installment) return rows[0].income; for(let i=1;i<rows.length;i++){ const a = rows[i-1], b = rows[i]; if(installment <= b.installment){ const t = (installment - a.installment) / (b.installment - a.installment); return Math.round(a.income + t*(b.income - a.income)); } } return rows[rows.length-1].income; }
+    const Card = ({title, right, children}) => (<div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700"><div className="flex items-center justify-between mb-4"><h3 className="text-xl font-semibold">{title}</h3>{right}</div>{children}</div>);
     function NumberInput({label, value, onChange, allowDecimal=false, suffix, placeholder}){
-      const [text, setText] = React.useState(value ? String(value) : '');
-
-      React.useEffect(()=>{
-        const toNum = s => Number((s || '').replace(/[^0-9\.]/g,'')) || 0;
-        const current = toNum(text);
-        const incoming = Number.isFinite(value) ? value : 0;
-        if(current !== incoming) setText(incoming ? String(incoming) : '');
-      }, [value]);
-
-      const handleChange = raw => {
-        setText(raw);
-        const cleaned = raw.replace(/[^0-9\.,]/g,'').replace(/,/g,'.');
-        if(cleaned === '') return;
-        const num = Number(cleaned);
-        if(Number.isFinite(num)) onChange(allowDecimal ? num : Math.floor(num));
-      };
-      const handleBlur = () => {
-        const cleaned = text.replace(/[^0-9\.,]/g,'').replace(/,/g,'.');
-        const num = cleaned === '' ? 0 : Number(cleaned);
-        const formatted = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: allowDecimal?2:0 }).format(num);
-        setText(num === 0 ? '' : formatted);
-        onChange(allowDecimal ? num : Math.floor(num));
-      };
-
-      return (
-        <label className="grid gap-1">
-          <span className="text-sm text-neutral-300">{label}</span>
-          <div className="flex rounded-xl border border-neutral-700 focus-within:ring-2 focus-within:ring-red-500/20 overflow-hidden">
-            <input type="text" inputMode={allowDecimal ? 'decimal' : 'numeric'}
-                   className="w-full p-3 outline-none bg-neutral-900 text-white"
-                   value={text} placeholder={placeholder || ''}
-                   onChange={e=>handleChange(e.target.value)} onBlur={handleBlur} aria-label={label}/>
-            {suffix && <span className="px-3 py-2 text-neutral-300 self-center">{suffix}</span>}
-          </div>
-        </label>
-      );
+      const [text, setText] = useState(value ? String(value) : "");
+      useEffect(()=>{ const num = Number((text||"").replace(/[^0-9\.]/g,""))||0; if (num !== (Number.isFinite(value)?value:0)) setText(value?String(value):""); },[value]);
+      const handleChange = (raw) => { setText(raw); const cleaned = raw.replace(/[^0-9\.,]/g,"").replace(/,/g,"."); if (cleaned === "") return; const num = Number(cleaned); if (Number.isFinite(num)) onChange(allowDecimal ? num : Math.floor(num)); };
+      const handleBlur = () => { const cleaned = text.replace(/[^0-9\.,]/g,"").replace(/,/g,"."); const num = cleaned === "" ? 0 : Number(cleaned); const formatted = new Intl.NumberFormat("en-ZA",{ maximumFractionDigits: allowDecimal?2:0 }).format(num); setText(num === 0 ? "" : formatted); onChange(allowDecimal?num:Math.floor(num)); };
+      return (<label className="grid gap-1"><span className="text-sm text-neutral-300">{label}</span><div className="flex rounded-xl border border-neutral-700 focus-within:ring-2 focus-within:ring-red-500/20 overflow-hidden"><input type="text" inputMode={allowDecimal?"decimal":"numeric"} placeholder={placeholder||""} className="w-full p-3 outline-none bg-neutral-900 text-white" value={text} onChange={(e)=>handleChange(e.target.value)} onBlur={handleBlur} aria-label={label} />{suffix && <span className="px-3 py-2 text-neutral-300 self-center">{suffix}</span>}</div></label>);
     }
-    const PercentInput  = props => <NumberInput {...props} allowDecimal suffix="%"/>;
-    const CurrencyInput = props => <NumberInput {...props} allowDecimal={false} suffix="R"/>;
-
-    const LOGO_SRC = "KW Explore_White.png";
-    const KW_RED = "#E31837";
-
+    const PercentInput  = (props) => <NumberInput {...props} allowDecimal={true}  suffix="%" />;
+    const CurrencyInput = (props) => <NumberInput {...props} allowDecimal={false} suffix="R" />;
     function App(){
-      const [active, setActive] = useState('quick');
-      const [persist, setPersist] = useState(true);
-      // start blank for price/deposit; rate/term are 0 but show placeholders
+      const [active, setActive] = useState("quick");
+      const [persist, setPersist] = useState(false);
       const [price, setPrice] = useState(0);
       const [deposit, setDeposit] = useState(0);
       const [rate, setRate] = useState(0);
       const [years, setYears] = useState(0);
-      const [income, setIncome] = useState(55000);
-      const [expenses, setExpenses] = useState(18000);
+      const [extraMonthly, setExtraMonthly]   = useState(0);
+      const [onceOffMonth, setOnceOffMonth]   = useState(0);
+      const [onceOffAmount, setOnceOffAmount] = useState(0);
+      const [income, setIncome] = useState(0);
+      const [expenses, setExpenses] = useState(0);
       const [targetDTI, setTargetDTI] = useState(0.30);
       const [acqDate, setAcqDate] = useState(new Date().toISOString().slice(0,10));
       const [includeVAT, setIncludeVAT] = useState(true);
+      const vatRate = 0.15;
       const [initiationFee, setInitiationFee] = useState(6037);
-
-      useEffect(()=>{
-        if(!persist) return;
-        const saved = localStorage.getItem('mc-toolkit-v1');
-        if(saved){
-          try{
-            const s = JSON.parse(saved);
-            setActive(s.active ?? 'bond');
-            setPrice(s.price ?? 0);
-            setDeposit(s.deposit ?? 0);
-            setRate(s.rate ?? 0);
-            setYears(s.years ?? 0);
-            setIncome(s.income ?? 55000);
-            setExpenses(s.expenses ?? 18000);
-            setTargetDTI(s.targetDTI ?? 0.30);
-            setAcqDate(s.acqDate ?? new Date().toISOString().slice(0,10));
-            setIncludeVAT(s.includeVAT ?? true);
-            setInitiationFee(s.initiationFee ?? 6037);
-          }catch{}
-        }
-      },[]);
-      useEffect(()=>{
-        if(!persist) return;
-        const s = {active, price, deposit, rate, years, income, expenses, targetDTI, acqDate, includeVAT, initiationFee};
-        localStorage.setItem('mc-toolkit-v1', JSON.stringify(s));
-      },[active, price, deposit, rate, years, income, expenses, targetDTI, acqDate, includeVAT, initiationFee, persist]);
-
+      useEffect(()=>{ if(!persist) return; try{ const s = JSON.parse(localStorage.getItem("kwe-bond-v1")||"{}"); ["price","deposit","rate","years","income","expenses"].forEach(k=>{ if(s[k]) ({price:setPrice,deposit:setDeposit,rate:setRate,years:setYears,income:setIncome,expenses:setExpenses}[k])(s[k]);}); }catch{} },[]);
+      useEffect(()=>{ if(!persist) return; const s = {price,deposit,rate,years,income,expenses}; localStorage.setItem("kwe-bond-v1", JSON.stringify(s)); },[persist,price,deposit,rate,years,income,expenses]);
       const loan = Math.max(0, price - deposit);
-      const pmt = monthlyPayment({ principal: loan, annualRatePct: rate, years });
-      const amort = useMemo(()=>buildAmortization({ principal: loan, annualRatePct: rate, years }),[loan,rate,years]);
-      const totalInterest = amort.reduce((s, r) => s + r.interest, 0);
-
-      const monthlyCapacity = Math.max(0, income * targetDTI - expenses);
-      const maxLoan = (()=>{
-        const i = (rate/100)/12;
-        if(i === 0) return monthlyCapacity * years * 12;
-        const n = years * 12;
-        if(n <= 0) return 0;
-        return monthlyCapacity * (Math.pow(1+i, n) - 1) / (i * Math.pow(1+i, n));
-      })();
-      const maxPrice = maxLoan + deposit;
-
-      const duty = transferDuty(price, acqDate);
-      const deedsTransfer = deedsTransferFee(price);
-      const deedsBond = deedsBondFee(loan);
-      const vatOnFees = includeVAT ? Math.round((deedsTransfer + deedsBond + initiationFee) * 0.15) : 0;
-      const totalUpfront = duty + deedsTransfer + deedsBond + initiationFee + vatOnFees;
-
-      const transferTotalGuideline = getTransferGuidelineTotal(price);
-      const bondTotalGuideline = getBondGuidelineTotal(loan);
-      const recommendedIncome = getRecommendedIncomeFromPmt(pmt);
-
-      const TabBtn = ({id, label}) => (
-        <button onClick={()=>setActive(id)}
-          className={'px-3 py-2 rounded-xl border border-neutral-700 ' + (active===id? 'text-white' : 'bg-neutral-800 hover:bg-neutral-700 text-white')}
-          style={active===id ? { backgroundColor: KW_RED, borderColor: KW_RED } : {}}>{label}</button>
-      );
-      const Card = ({title, right, children}) => (
-        <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-semibold">{title}</h3>
-            {right}
+      const readyRepay = loan > 0 && rate > 0 && years > 0;
+      const pmt = readyRepay ? monthlyPayment({principal:loan, annualRatePct:rate, years}) : 0;
+      const amort = React.useMemo(()=> readyRepay ? buildAmortization({principal:loan, annualRatePct:rate, years}) : [], [readyRepay,loan,rate,years]);
+      const totalInterest = amort.reduce((s,r)=>s+r.interest,0);
+      const extraScenario = React.useMemo(()=> (readyRepay && (extraMonthly>0 || onceOffAmount>0)) ? buildAmortizationWithExtra({principal:loan, annualRatePct:rate, years, extraMonthly, onceOffMonth, onceOffAmount}) : null, [readyRepay,loan,rate,years,extraMonthly,onceOffMonth,onceOffAmount]);
+      const totalInterestExtra = extraScenario ? extraScenario.rows.reduce((s,r)=>s+r.interest,0) : 0;
+      const monthsOriginal = readyRepay ? years*12 : 0;
+      const monthsNew      = extraScenario ? extraScenario.rows.length : 0;
+      const monthsSaved    = extraScenario ? Math.max(0, monthsOriginal - monthsNew) : 0;
+      const interestSaved  = extraScenario ? Math.max(0, totalInterest - totalInterestExtra) : 0;
+      const readyAfford = income > 0 && years > 0 && rate > 0;
+      const monthlyCapacity = readyAfford ? Math.max(0, income*targetDTI - expenses) : 0;
+      const maxLoan = (()=>{ if(!readyAfford) return 0; const i = (rate/100)/12; if(i===0) return monthlyCapacity * years * 12; const n = years * 12; return monthlyCapacity * (Math.pow(1+i,n)-1) / (i*Math.pow(1+i,n)); })();
+      const maxPrice = readyAfford ? maxLoan + deposit : 0;
+      const readyPrice = price > 0;
+      const duty = readyPrice ? transferDuty(price, acqDate) : 0;
+      const deedsTransfer = readyPrice ? deedsTransferFee(price) : 0;
+      const deedsBond     = readyRepay ? deedsBondFee(loan) : 0;
+      const vatOnFees = (includeVAT && (deedsTransfer + deedsBond + initiationFee) > 0) ? Math.round((deedsTransfer + deedsBond + initiationFee) * vatRate) : 0;
+      const totalUpfront = (duty + deedsTransfer + deedsBond + initiationFee + vatOnFees) || 0;
+      const transferTotalGuideline = readyPrice ? getTransferGuidelineTotal(price) : 0;
+      const bondTotalGuideline     = readyRepay ? getBondGuidelineTotal(loan) : 0;
+      const recommendedIncome = readyRepay ? (getRecommendedIncomeFromPmt(pmt) || Math.round(pmt*3)) : 0;
+      return (<div className="min-h-screen">
+        <header className="sticky top-0 z-20 text-white border-b" style={{backgroundColor:KW_RED}}>
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3 justify-between">
+            <div className="flex items-center gap-3">
+              <img src="./assets/KW Explore_White.png" alt="KW Explore" className="h-10 w-auto"/>
+              <div>
+                <div className="font-semibold leading-tight">KW Explore Bond <span className="text-xs font-normal ml-2">— This is just an indication. Please contact transferring attorney for accurate quote.</span></div>
+                <div className="text-xs text-white/80 -mt-0.5">Explore Property Group Bond Calculator</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 no-print">
+              <button onClick={()=>window.print()} className="px-3 py-2 rounded-xl border border-white/20 hover:bg-white/10">Print</button>
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/20 cursor-pointer">
+                <input type="checkbox" checked={persist} onChange={e=>setPersist(e.target.checked)} />
+                <span className="text-sm">Auto‑save</span>
+              </label>
+            </div>
           </div>
-          {children}
-        </div>
-      );
-
-      return (
-        <div className="min-h-screen bg-neutral-900 text-white">
-          <header className="sticky top-0 z-20 text-white border-b" style={{ backgroundColor: KW_RED }}>
-            <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3 justify-between">
-              <div className="flex items-center gap-3">
-                <img src={LOGO_SRC} alt="KW Explore" className="h-10 w-auto"/>
-                <div>
-                  <div className="font-semibold leading-tight">
-                    KW Explore Bond <span className="text-xs font-normal ml-2">— This is just an indication. Please contact transferring attorney for accurate quote.</span>
-                  </div>
-                  <div className="text-xs text-white/80 -mt-0.5">Keller Williams Realty • South Africa</div>
+        </header>
+        <main className="max-w-6xl mx-auto px-4 py-6 grid gap-6">
+          <nav className="flex gap-2 overflow-x-auto whitespace-nowrap text-sm">
+            {["quick","bond","afford","duty","fees"].map(id => (
+              <button key={id} onClick={()=>setActive(id)} className={"px-3 py-2 rounded-xl border border-neutral-700 " + (active===id ? "text-white" : "bg-neutral-800 hover:bg-neutral-700 text-white")} style={active===id ? {backgroundColor:KW_RED, borderColor:KW_RED} : {}}>
+                {({quick:"Quick calc",bond:"Bond repayment",afford:"Affordability",duty:"Transfer duty",fees:"Deeds fees"})[id]}
+              </button>
+            ))}
+          </nav>
+          {active==="quick" && (<div className="max-w-3xl mx-auto">
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="text-center mb-4">
+                <h1 className="text-2xl font-semibold">Moricolette Erasmus</h1>
+                <div className="text-neutral-300">Property Finance Specialist (Bond Originator)</div>
+                <div className="mt-2 flex items-center justify-center gap-3 text-red-500">
+                  <span>☎ 072 575 9054</span><span className="text-gray-400">•</span>
+                  <a href="mailto:moricolette.erasmusnel@kwsa.co.za" className="underline">moricolette.erasmusnel@kwsa.co.za</a>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={()=>window.print()} className="px-3 py-2 rounded-xl border border-white/20 hover:bg-white/10">Print</button>
-                <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/20 cursor-pointer">
-                  <input type="checkbox" checked={persist} onChange={e=>setPersist(e.target.checked)} />
-                  <span className="text-sm">Auto‑save</span>
+              <h2 className="text-lg font-semibold mb-2">Bond, Transfer & Attorney Cost Calculator</h2>
+              <div className="flex gap-2 mb-3">
+                <span className="px-3 py-1 rounded-full text-sm bg-red-600 text-white">Monthly Repayments</span>
+                <span className="px-3 py-1 rounded-full text-sm bg-red-600 text-white">Recommended Monthly Income</span>
+              </div>
+              <div className="grid gap-4">
+                <NumberInput label="Purchase Price (R)" value={price} onChange={setPrice} />
+                <NumberInput label="Deposit (R)" value={deposit} onChange={setDeposit} />
+                <PercentInput  label="Interest Rate (%)" value={rate} onChange={setRate} placeholder="11.75" />
+                <NumberInput   label="Term (Years)" value={years} onChange={setYears} placeholder="20" />
+              </div>
+              <div className="mt-4 grid gap-2 text-sm">
+                <div>Estimated Monthly Repayment: <span className="font-semibold">{readyRepay ? fmtZAR(pmt) : "—"}</span></div>
+                <div>Total Repayments over {years || "—"} years: <span className="font-semibold">{readyRepay ? fmtZAR(pmt*years*12) : "—"}</span></div>
+                <div>Bond Registration Costs (Aug 2025 guideline): <span className="font-semibold">{readyRepay ? fmtZAR(bondTotalGuideline) : "—"}</span></div>
+                <div>Transfer Costs (inc. duty — Aug 2025): <span className="font-semibold">{readyPrice ? fmtZAR(transferTotalGuideline) : "—"}</span></div>
+                <div>Estimated Total Upfront Costs: <span className="font-semibold">{(readyPrice||readyRepay) ? fmtZAR(transferTotalGuideline + bondTotalGuideline + initiationFee) : "—"}</span></div>
+                <div>Recommended Minimum Monthly Income: <span className="font-semibold">{readyRepay ? fmtZAR(recommendedIncome) : "—"}</span></div>
+              </div>
+            </div>
+          </div>)}
+          {active==="bond" && (<div className="grid md:grid-cols-5 gap-6">
+            <div className="md:col-span-2 grid gap-6">
+              <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+                <div className="grid gap-4">
+                  <NumberInput label="Purchase price" value={price} onChange={setPrice} />
+                  <NumberInput label="Deposit" value={deposit} onChange={setDeposit} />
+                  <PercentInput  label="Interest rate (annual)" value={rate} onChange={setRate} placeholder="11.75" />
+                  <NumberInput   label="Term (years)" value={years} onChange={setYears} placeholder="20" />
+                  <NumberInput   label="Extra monthly payment (optional)" value={extraMonthly} onChange={setExtraMonthly} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberInput   label="Once-off extra: month #" value={onceOffMonth}  onChange={setOnceOffMonth} />
+                    <NumberInput   label="Once-off extra: amount"  value={onceOffAmount} onChange={setOnceOffAmount} />
+                  </div>
+                  <div className="text-xs text-neutral-400">Monthly compounding, fixed rate. Extra payments shorten term and reduce interest.</div>
+                </div>
+              </div>
+              <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="text-neutral-300">Transfer duty</div><div className="text-right font-medium">{readyPrice ? fmtZAR(duty) : "—"}</div>
+                  <div className="text-neutral-300">Deeds (transfer) fee</div><div className="text-right font-medium">{readyPrice ? fmtZAR(deedsTransfer) : "—"}</div>
+                  <div className="text-neutral-300">Deeds (bond) fee</div><div className="text-right font-medium">{readyRepay ? fmtZAR(deedsBond) : "—"}</div>
+                  <div className="text-neutral-300">Bank initiation (editable)</div><div className="text-right font-medium">{fmtZAR(initiationFee)}</div>
+                  <div className="text-neutral-300">VAT on above {includeVAT?"(15%)":"(excluded)"}</div><div className="text-right font-medium">{(readyPrice||readyRepay) ? fmtZAR(vatOnFees) : "—"}</div>
+                  <div className="col-span-2 h-px bg-neutral-700 my-2"></div>
+                  <div className="text-neutral-300">Estimated cash to close</div><div className="text-right font-semibold">{(readyPrice||readyRepay) ? fmtZAR(totalUpfront) : "—"}</div>
+                </div>
+              </div>
+            </div>
+            <div className="md:col-span-3 grid gap-6">
+              <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+                <div className="grid sm:grid-cols-2 gap-6">
+                  <div className="grid gap-1">
+                    <div className="text-sm text-neutral-300">Loan amount</div>
+                    <div className="text-2xl font-semibold">{readyRepay ? fmtZAR(loan) : "—"}</div>
+                  </div>
+                  <div className="grid gap-1">
+                    <div className="text-sm text-neutral-300">Monthly installment</div>
+                    <div className="text-2xl font-semibold">{readyRepay ? fmtZAR(pmt) : "—"}</div>
+                  </div>
+                  <div className="grid gap-1">
+                    <div className="text-sm text-neutral-300">Total interest (life of loan)</div>
+                    <div className="text-lg font-medium">{readyRepay ? fmtZAR(totalInterest) : "—"}</div>
+                  </div>
+                  <div className="grid gap-1">
+                    <div className="text-sm text-neutral-300">Total paid</div>
+                    <div className="text-lg font-medium">{readyRepay ? fmtZAR(totalInterest + loan) : "—"}</div>
+                  </div>
+                </div>
+                {(extraMonthly>0 || onceOffAmount>0) && extraScenario && (
+                  <div className="mt-4 grid sm:grid-cols-3 gap-4 text-sm">
+                    <div className="p-3 rounded-xl bg-neutral-800"><div className="text-neutral-300">New payoff time</div><div className="text-lg font-semibold">{Math.floor(monthsNew/12)} yrs {monthsNew%12} m</div></div>
+                    <div className="p-3 rounded-xl bg-neutral-800"><div className="text-neutral-300">Months saved</div><div className="text-lg font-semibold">{monthsSaved}</div></div>
+                    <div className="p-3 rounded-xl bg-neutral-800"><div className="text-neutral-300">Interest saved</div><div className="text-lg font-semibold">{fmtZAR(interestSaved)}</div></div>
+                  </div>
+                )}
+              </div>
+              <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button className="px-3 py-2 rounded-lg border" onClick={()=>{
+                    const rows = amort.map(r=>({month:r.month,payment:Math.round(r.payment),interest:Math.round(r.interest),principal:Math.round(r.principal),balance:Math.round(r.balance)}));
+                    if(!rows.length) return;
+                    const headers = Object.keys(rows[0]);
+                    const csv = [headers.join(","), ...rows.map(r => headers.map(h => r[h]).join(","))].join("\n");
+                    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+                    const url  = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href=url; a.download="amortization.csv"; a.click(); URL.revokeObjectURL(url);
+                  }}>CSV (standard)</button>
+                  {(extraMonthly>0 || onceOffAmount>0) && extraScenario && (
+                    <button className="px-3 py-2 rounded-lg border" onClick={()=>{
+                      const rows = extraScenario.rows.map(r=>({month:r.month,payment:Math.round(r.payment),interest:Math.round(r.interest),principal:Math.round(r.principal),balance:Math.round(r.balance)}));
+                      const headers = Object.keys(rows[0]);
+                      const csv = [headers.join(","), ...rows.map(r => headers.map(h => r[h]).join(","))].join("\n");
+                      const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+                      const url  = URL.createObjectURL(blob);
+                      const a = document.createElement("a"); a.href=url; a.download="amortization_with_extra.csv"; a.click(); URL.revokeObjectURL(url);
+                    }}>CSV (with extra)</button>
+                  )}
+                  <button className="px-3 py-2 rounded-lg border" onClick={()=>exportAmortWithFormulasCSV("amortization_formulas.csv", loan, rate, years, extraMonthly)}>Excel (.csv with formulas)</button>
+                </div>
+                <div className="max-h-80 overflow-auto rounded-lg border border-neutral-700">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 bg-neutral-800">
+                      <tr><th className="text-left p-2">Month</th><th className="text-right p-2">Payment</th><th className="text-right p-2">Interest</th><th className="text-right p-2">Principal</th><th className="text-right p-2">Balance</th></tr>
+                    </thead>
+                    <tbody>
+                      {amort.length===0 ? (<tr><td className="p-3 text-center text-neutral-400" colSpan={5}>Enter price, deposit, interest and term to see the schedule.</td></tr>)
+                        : ((extraMonthly>0 || onceOffAmount>0) && extraScenario
+                            ? extraScenario.rows.map(r => (<tr key={r.month} className="odd:bg-neutral-900 even:bg-neutral-800"><td className="p-2">{r.month}</td><td className="p-2 text-right">{fmtZAR(r.payment)}</td><td className="p-2 text-right">{fmtZAR(r.interest)}</td><td className="p-2 text-right">{fmtZAR(r.principal)}</td><td className="p-2 text-right">{fmtZAR(r.balance)}</td></tr>))
+                            : amort.map(r => (<tr key={r.month} className="odd:bg-neutral-900 even:bg-neutral-800"><td className="p-2">{r.month}</td><td className="p-2 text-right">{fmtZAR(r.payment)}</td><td className="p-2 text-right">{fmtZAR(r.interest)}</td><td className="p-2 text-right">{fmtZAR(r.principal)}</td><td className="p-2 text-right">{fmtZAR(r.balance)}</td></tr>))
+                          )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div></div>)}
+          {active==="afford" && (<div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="grid gap-4">
+                <NumberInput label="Monthly gross income" value={income} onChange={setIncome} />
+                <NumberInput label="Monthly committed expenses" value={expenses} onChange={setExpenses} />
+                <PercentInput  label="Target installment-to-income (DTI)" value={targetDTI*100} onChange={(v)=>setTargetDTI(v/100)} />
+                <PercentInput  label="Interest rate (assumed)" value={rate} onChange={setRate} placeholder="11.75" />
+                <NumberInput   label="Term (years)" value={years} onChange={setYears} placeholder="20" />
+                <NumberInput   label="Deposit (planned)" value={deposit} onChange={setDeposit} />
+                <div className="text-xs text-neutral-400">This gives a rough sense of affordability using a target DTI you set. Lenders may use different rules.</div>
+              </div>
+            </div>
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="grid gap-3 text-lg">
+                <div className="grid grid-cols-2 text-sm">
+                  <div className="text-neutral-300">Installment budget (monthly)</div><div className="text-right font-medium">{fmtZAR(monthlyCapacity)}</div>
+                </div>
+                <div className="grid grid-cols-2">
+                  <div className="text-neutral-300">Max loan (approximate)</div><div className="text-right font-semibold">{fmtZAR(maxLoan)}</div>
+                </div>
+                <div className="grid grid-cols-2">
+                  <div className="text-neutral-300">Max purchase price</div><div className="text-right font-semibold">{fmtZAR(maxPrice)}</div>
+                </div>
+                <div className="mt-2 p-3 rounded-xl bg-red-500/10 text-red-200 text-sm">Estimates only. Final approval depends on credit checks and bank criteria.</div>
+              </div>
+            </div>
+          </div>)}
+          {active==="duty" && (<div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="grid gap-4">
+                <NumberInput label="Purchase price" value={price} onChange={setPrice} />
+                <label className="grid gap-1">
+                  <span className="text-sm text-neutral-300">Acquisition date</span>
+                  <input type="date" className="p-3 rounded-xl border border-neutral-700 bg-neutral-900 text-white" value={acqDate} onChange={(e)=>setAcqDate(e.target.value)} />
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={includeVAT} onChange={(e)=>setIncludeVAT(e.target.checked)} />
+                  <span className="text-sm">Include VAT on fees (15%)</span>
                 </label>
               </div>
             </div>
-          </header>
-
-          <main className="max-w-6xl mx-auto px-4 py-6 grid gap-6">
-            <nav className="flex gap-2 overflow-x-auto whitespace-nowrap no-scrollbar text-sm">
-              <TabBtn id="quick" label="Quick calc"/>
-              <TabBtn id="bond" label="Bond repayment"/>
-              <TabBtn id="afford" label="Affordability"/>
-              <TabBtn id="duty" label="Transfer duty"/>
-              <TabBtn id="fees" label="Deeds fees"/>
-            </nav>
-
-            {active==='quick' && (
-              <div className="max-w-3xl mx-auto">
-                <Card title="">
-                  <div className="text-center mb-4">
-                    <h1 className="text-2xl font-semibold">Moricolette Erasmus</h1>
-                    <div className="text-neutral-300">Property Finance Specialist (Bond Originator)</div>
-                    <div className="mt-2 flex items-center justify-center gap-3 text-red-500">
-                      <span>☎ 072 575 9054</span>
-                      <span className="text-gray-400">•</span>
-                      <a href="mailto:moricolette.erasmusnel@kwsa.co.za" className="underline">moricolette.erasmusnel@kwsa.co.za</a>
-                    </div>
-                    <div className="mt-2 text-neutral-400">Explore Property Group Bond Calculator</div>
-                  </div>
-
-                  <h2 className="text-lg font-semibold mb-2">Bond, Transfer & Attorney Cost Calculator</h2>
-                  <div className="flex gap-2 mb-3">
-                    <span className="px-3 py-1 rounded-full text-sm bg-red-600 text-white">Monthly Repayments</span>
-                    <span className="px-3 py-1 rounded-full text-sm bg-red-600 text-white">Recommended Monthly Income</span>
-                  </div>
-
-                  <div className="grid gap-4">
-                    <CurrencyInput label="Purchase Price (R)" value={price} onChange={setPrice} />
-                    <CurrencyInput label="Deposit (R)" value={deposit} onChange={setDeposit} />
-                    <PercentInput label="Interest Rate (%)" value={rate} onChange={setRate} placeholder="11.75" />
-                    <NumberInput label="Term (Years)" value={years} onChange={setYears} placeholder="20" />
-                  </div>
-
-                  <div className="mt-4 grid gap-2 text-sm">
-                    <div>Estimated Monthly Repayment: <span className="font-semibold">{fmtZAR(pmt)}</span></div>
-                    <div>Total Repayments over {years} years: <span className="font-semibold">{fmtZAR(pmt * years * 12)}</span></div>
-                    <div>Bond Registration Costs (Aug 2025 guideline): <span className="font-semibold">{fmtZAR(bondTotalGuideline)}</span></div>
-                    <div>Transfer Costs (inc. duty — Aug 2025): <span className="font-semibold">{fmtZAR(transferTotalGuideline)}</span></div>
-                    <div>Estimated Total Upfront Costs: <span className="font-semibold">{fmtZAR(transferTotalGuideline + bondTotalGuideline)}</span></div>
-                    <div>Recommended Minimum Monthly Income: <span className="font-semibold">{fmtZAR(recommendedIncome)}</span></div>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <label className="grid gap-1 sm:justify-end sm:text-right">
-                      <span className="text-neutral-300">Bank Initiation (editable)</span>
-                      <input type="text" className="p-3 rounded-xl border border-neutral-700 bg-neutral-900 text-white w-40 justify-self-start sm:justify-self-end"
-                             value={new Intl.NumberFormat('en-ZA',{maximumFractionDigits:0}).format(6037)}
-                             onChange={()=>{}} />
-                    </label>
-                  </div>
-                </Card>
-              </div>
-            )}
-
-            {active==='bond' && (
-              <div className="grid md:grid-cols-5 gap-6">
-                <div className="md:col-span-2 grid gap-6">
-                  <Card title="Inputs">
-                    <div className="grid gap-4">
-                      <CurrencyInput label="Purchase price" value={price} onChange={setPrice} />
-                      <CurrencyInput label="Deposit" value={deposit} onChange={setDeposit} />
-                      <PercentInput label="Interest rate (annual)" value={rate} onChange={setRate} placeholder="11.75" />
-                      <NumberInput label="Term (years)" value={years} onChange={setYears} placeholder="20" />
-                      <div className="text-xs text-neutral-400">Monthly compounding, fixed rate. Payment shown is the fixed monthly installment.</div>
-                    </div>
-                  </Card>
-                  <Card title="Upfront costs (quick view)">
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="text-neutral-300">Transfer duty</div><div className="text-right font-medium">{fmtZAR(transferDuty(price, new Date().toISOString().slice(0,10)))}</div>
-                      <div className="text-neutral-300">Deeds (transfer) fee</div><div className="text-right font-medium">{fmtZAR(deedsTransferFee(price))}</div>
-                      <div className="text-neutral-300">Deeds (bond) fee</div><div className="text-right font-medium">{fmtZAR(deedsBondFee(Math.max(0, price - deposit)))}</div>
-                    </div>
-                  </Card>
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="grid gap-3">
+                <div className="grid grid-cols-2 text-sm">
+                  <div className="text-neutral-300">Transfer duty</div><div className="text-right font-semibold">{readyPrice ? fmtZAR(duty) : "—"}</div>
                 </div>
-
-                <div className="md:col-span-3 grid gap-6">
-                  <Card title="Monthly repayment">
-                    <div className="grid sm:grid-cols-2 gap-6">
-                      <div className="grid gap-1">
-                        <div className="text-sm text-neutral-300">Loan amount</div>
-                        <div className="text-2xl font-semibold">{fmtZAR(Math.max(0, price - deposit))}</div>
-                      </div>
-                      <div className="grid gap-1">
-                        <div className="text-sm text-neutral-300">Monthly installment</div>
-                        <div className="text-2xl font-semibold">{fmtZAR(pmt)}</div>
-                      </div>
-                    </div>
-                  </Card>
-                  <Card title="Amortization schedule"
-                        right={<button className="px-3 py-2 rounded-lg border"
-                          onClick={()=>{
-                            const headers=['month','payment','interest','principal','balance'];
-                            const csv=[headers.join(',')].concat(
-                              (useMemo(()=>buildAmortization({ principal: Math.max(0, price - deposit), annualRatePct: rate, years }),[price,deposit,rate,years])||[]).map(r=>[r.month,Math.round(r.payment),Math.round(r.interest),Math.round(r.principal),Math.round(r.balance)].join(','))
-                            ).join('\n');
-                            const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a'); a.href=url; a.download='amortization.csv'; a.click(); URL.revokeObjectURL(url);
-                          }}>Export CSV</button>}>
-                    <div className="max-h-80 overflow-auto rounded-lg border border-neutral-700">
-                      <table className="min-w-full text-sm">
-                        <thead className="sticky top-0 bg-neutral-800">
-                          <tr>
-                            <th className="text-left p-2">Month</th>
-                            <th className="text-right p-2">Payment</th>
-                            <th className="text-right p-2">Interest</th>
-                            <th className="text-right p-2">Principal</th>
-                            <th className="text-right p-2">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                        </tbody>
-                      </table>
-                    </div>
-                  </Card>
+                <div className="text-xs text-neutral-400">Automatically switches to the SARS schedule effective 1 Apr 2025 when applicable.</div>
+                <div className="p-3 rounded-xl bg-neutral-800 text-sm">
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-neutral-700">
+                    <div className="text-neutral-300">Estimated cash to close (incl. bank initiation & VAT)</div>
+                    <div className="font-semibold">{(readyPrice) ? fmtZAR(totalUpfront) : "—"}</div>
+                  </div>
                 </div>
+                <div className="text-xs text-neutral-400">Disclaimer: Estimates only; attorney fees and disbursements vary by matter. Confirm with your conveyancer.</div>
               </div>
-            )}
-
-            {active==='afford' && (
-              <div className="grid md:grid-cols-2 gap-6">
-                <Card title="Your numbers">
-                  <div className="grid gap-4">
-                    <CurrencyInput label="Monthly gross income" value={income} onChange={setIncome} />
-                    <CurrencyInput label="Monthly committed expenses" value={expenses} onChange={setExpenses} />
-                    <PercentInput label="Target installment-to-income (DTI)" value={targetDTI*100} onChange={v=>setTargetDTI(v/100)} />
-                    <PercentInput label="Interest rate (assumed)" value={rate} onChange={setRate} placeholder="11.75" />
-                    <NumberInput label="Term (years)" value={years} onChange={setYears} placeholder="20" />
-                    <CurrencyInput label="Deposit (planned)" value={deposit} onChange={setDeposit} />
-                    <div className="text-xs text-neutral-400">This gives a rough sense of affordability using a target DTI you set. Lenders may use different rules.</div>
-                  </div>
-                </Card>
-                <Card title="What you could afford">
-                  <div className="grid gap-3 text-lg">
-                    <div className="grid grid-cols-2 text-sm">
-                      <div className="text-neutral-300">Installment budget (monthly)</div><div className="text-right font-medium">{fmtZAR(Math.max(0, income * targetDTI - expenses))}</div>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            )}
-
-            {active==='duty' && (
-              <div className="grid md:grid-cols-2 gap-6">
-                <Card title="Inputs">
-                  <div className="grid gap-4">
-                    <CurrencyInput label="Purchase price" value={price} onChange={setPrice} />
-                    <label className="grid gap-1">
-                      <span className="text-sm text-neutral-300">Acquisition date</span>
-                      <input type="date" className="p-3 rounded-xl border border-neutral-700 bg-neutral-900 text-white" value={new Date().toISOString().slice(0,10)} onChange={()=>{}} />
-                    </label>
-                    <label className="inline-flex items-center gap-2">
-                      <input type="checkbox" checked={true} onChange={()=>{}} />
-                      <span className="text-sm">Include VAT on fees (15%)</span>
-                    </label>
-                  </div>
-                </Card>
-                <Card title="Results">
-                  <div className="grid gap-3">
-                    <div className="grid grid-cols-2 text-sm">
-                      <div className="text-neutral-300">Transfer duty</div><div className="text-right font-semibold">{fmtZAR(transferDuty(price, new Date().toISOString().slice(0,10)))}</div>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            )}
-
-            {active==='fees' && (
-              <div className="grid md:grid-cols-2 gap-6">
-                <Card title="Inputs">
-                  <div className="grid gap-4">
-                    <CurrencyInput label="Purchase price" value={price} onChange={setPrice} />
-                    <CurrencyInput label="Bond amount" value={loan} onChange={()=>{}} />
-                    <div className="text-xs text-neutral-400">Bond amount is derived from price minus deposit.</div>
-                  </div>
-                </Card>
-                <Card title="Guideline costs (Aug 2025)">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="text-neutral-300">Transfer costs (inc. duty)</div><div className="text-right font-medium">{fmtZAR(getTransferGuidelineTotal(price))}</div>
-                    <div className="text-neutral-300">Bond registration costs</div><div className="text-right font-medium">{fmtZAR(getBondGuidelineTotal(loan))}</div>
-                  </div>
-                </Card>
-              </div>
-            )}
-
-          </main>
-
-          <footer className="max-w-6xl mx-auto px-4 pb-10 text-xs text-neutral-400">
-            <div className="flex flex-wrap items-center gap-2">
-              <span>© {new Date().getFullYear()} Keller Williams Explore. Estimates only; no warranties. Check with your conveyancer and lender.</span>
             </div>
-          </footer>
-        </div>
-      );
+          </div>)}
+          {active==="fees" && (<div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="grid gap-4">
+                <NumberInput label="Purchase price" value={price} onChange={setPrice} />
+                <NumberInput label="Bond amount" value={loan} onChange={()=>{}} />
+                <div className="text-xs text-neutral-400">Bond amount is derived from price minus deposit.</div>
+              </div>
+            </div>
+            <div className="bg-neutral-800 rounded-2xl shadow p-5 border border-neutral-700">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="text-neutral-300">Transfer costs (inc. duty)</div><div className="text-right font-medium">{readyPrice ? fmtZAR(transferTotalGuideline) : "—"}</div>
+                <div className="text-neutral-300">Bond registration costs</div><div className="text-right font-medium">{readyRepay ? fmtZAR(bondTotalGuideline) : "—"}</div>
+                <div className="text-neutral-300">Bank initiation (editable)</div><div className="text-right font-medium">{fmtZAR(initiationFee)}</div>
+                <div className="col-span-2 h-px bg-neutral-700 my-1"></div>
+                <div className="text-neutral-300">Estimated cash to close (guideline + initiation)</div><div className="text-right font-semibold">{(readyPrice||readyRepay) ? fmtZAR(transferTotalGuideline + bondTotalGuideline + initiationFee) : "—"}</div>
+              </div>
+              <div className="text-xs text-neutral-400 mt-2">Guideline tables reflect August 2025 update. Figures are rounded.</div>
+            </div>
+          </div>)}
+        </main>
+        <footer className="max-w-6xl mx-auto px-4 pb-10 text-xs text-neutral-400"><div>© 2025 Explore Property Group. Estimates only; no warranties. Check with your conveyancer and lender.</div></footer>
+      </div>);
     }
-
-    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+    const root = ReactDOM.createRoot(document.getElementById("app"));
+    root.render(<App/>);
   </script>
 </body>
 </html>
